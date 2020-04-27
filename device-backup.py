@@ -11,10 +11,12 @@ import difflib
 import filecmp
 import sys
 import os
+import re
 
 #Module 'Global' variables
 DEVICE_FILE_PATH = 'devices.csv' # file should contain a list of devices in format: ip,username,password,device_type
-BACKUP_DIR_PATH = '/Users/otselova/PycharmProjects/backup_creator_v2/backups' # complete path to backup directory
+BACKUP_DIR_PATH = 'backups' # complete path to backup directory
+NTP_SERVER = "10.31.73.1"
 
 def enable_logging():
     # This function enables netmiko logging for reference
@@ -205,10 +207,15 @@ def process_target(device,timestamp):
     # Requires connection object and a timestamp string as an input
 
     connection = connect_to_device(device)
-    
+
+    npe_status, ios_ver, model = get_version(connection, device['hostname'])
+    cdp, n_cdp_neigh = get_cdp_info(connection, device['hostname'])
+    ntp_status = get_ntp_status(connection, device['hostname'])
+    config_ntp(connection, device['hostname'])
+
     backup_file_path = get_backup_file_path(device['hostname'], timestamp)
     backup_result = create_backup(connection, backup_file_path, device['hostname'])
-    
+
     disconnect_from_device(connection, device['hostname'])
 
     # if the script managed to create a backup, then look for a previous one
@@ -222,6 +229,72 @@ def process_target(device,timestamp):
             print('Unable to find previos backup file to find changes.')
             print('-*-' * 10)
             print()
+
+    return device['hostname'] + f"|{model}" + f"|{ios_ver}" + f"|{npe_status}" + f"|CDP is {cdp}, {n_cdp_neigh} peers" + f"|Clock in {ntp_status}"
+
+def get_version(connection, hostname):
+
+    try:
+        output = connection.send_command('sh ver | inc UNIVERSAL')
+        npe_status = 'NPE' if '_NPE' in output else 'PE'
+
+        output = connection.send_command('sh ver | in Software, Version')
+        match = re.findall(r"Version ([\d\.]+)", output)
+        ios_ver = match[0] if match else "----"
+
+        output = connection.send_command('show inventory | include Chassis')
+        match = re.findall(r"DESCR: \"([\w ]+)\"", output)
+        model = match[0] if match else "----"
+
+        return npe_status, ios_ver, model
+
+    except Error:
+        print('Error! Unable to get version info from device ' + hostname)
+        return False
+
+def get_cdp_info(connection, hostname):
+
+    try:
+        output = connection.send_command('show cdp')
+        cdp = "ON" if re.findall(r"(Global)", output) else "OFF"
+        
+        output = connection.send_command('show cdp neighbors')
+        match = re.findall(r"displayed : ([\d]+)", output)
+        n_cdp_neigh = match[0] if match else "--"
+
+        return cdp, n_cdp_neigh
+
+    except Error:
+        print('Error! Unable to get cdp info from device ' + hostname)
+        return False
+
+
+def get_ntp_status(connection, hostname):
+
+    try:
+        output = connection.send_command('show ntp status | inc Clock')
+        ntp_status = 'not Sync' if 'unsynchronized' in output else 'Sync'
+
+        return ntp_status
+
+    except Error:
+        print('Error! Unable to get ntp info from device ' + hostname)
+        return False
+
+def config_ntp(connection, hostname):
+
+    try:
+        connection.send_config_set('clock timezone GMT+0 0 0')
+        output = connection.send_command(f'ping {NTP_SERVER}')
+        ntp_online = True if '100 percent' in output else False
+        if ntp_online:
+            output = connection.send_config_set(f'ntp server {NTP_SERVER}')
+            if output:
+                print('ntp server configured.')
+                print('-*-' * 10)
+    except Error:
+        print('Error! Unable to cfg ntp server on device ' + hostname)
+        return False
 
 def main(*args):
     # This is a main function
@@ -237,6 +310,7 @@ def main(*args):
 
     # creating a empty list
     processes=list()
+    device_info=list()
 
     # Running workers to manage connections
     with mp.Pool(4) as pool:
@@ -246,6 +320,10 @@ def main(*args):
         # Waiting for results...
         for process in processes:
             process.get()
+        # Show table information
+        for process in processes:
+            print (process.get())
+
 
 
 if __name__ == '__main__':
