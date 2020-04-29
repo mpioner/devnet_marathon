@@ -310,7 +310,6 @@ def main(*args):
 
     # creating a empty list
     processes=list()
-    device_info=list()
 
     # Running workers to manage connections
     with mp.Pool(4) as pool:

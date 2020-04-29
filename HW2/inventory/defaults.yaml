@@ -1,0 +1,11 @@
+platform: ios
+username: admin
+password: admin
+connection_options:
+  scrapli:
+    platform: cisco_iosxe
+    port: 22
+    extras:
+      transport: ssh2
+      ssh_config_file: True
+      auth_strict_key: False

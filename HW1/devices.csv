@@ -1,0 +1,3 @@
+hostname,ip,username,password,secret,device_type
+csv1000v,10.31.73.251,admin,admin,admin,cisco_xe
+csv1000v-2,10.31.73.251,admin,admin,admin,cisco_xe

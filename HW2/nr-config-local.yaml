@@ -1,0 +1,13 @@
+---
+core:
+  num_workers: 3
+  raise_on_error: False
+
+logging:
+  enabled: True
+
+inventory:
+  plugin: nornir.plugins.inventory.simple.SimpleInventory
+  options:
+    host_file: "inventory/hosts.yaml"
+    defaults_file: "inventory/defaults.yaml"
